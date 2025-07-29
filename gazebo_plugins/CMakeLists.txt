@@ -3,7 +3,7 @@ project(gazebo_plugins)
 
 option(ENABLE_DISPLAY_TESTS "Enable the building of tests that requires a display" OFF)
 
-find_package(catkin REQUIRED COMPONENTS 
+find_package(catkin REQUIRED COMPONENTS
   gazebo_dev
   message_generation
   gazebo_msgs
@@ -104,23 +104,23 @@ endif()
 
 catkin_package(
   INCLUDE_DIRS include
-  LIBRARIES 
-  vision_reconfigure 
-  gazebo_ros_utils 
-  gazebo_ros_camera_utils 
-  gazebo_ros_camera 
+  LIBRARIES
+  vision_reconfigure
+  gazebo_ros_utils
+  gazebo_ros_camera_utils
+  gazebo_ros_camera
   gazebo_ros_triggered_camera
-  gazebo_ros_multicamera 
+  gazebo_ros_multicamera
   gazebo_ros_triggered_multicamera
-  gazebo_ros_depth_camera 
-  gazebo_ros_openni_kinect 
-  gazebo_ros_gpu_laser 
-  gazebo_ros_laser 
-  gazebo_ros_block_laser 
-  gazebo_ros_p3d 
-  gazebo_ros_imu 
+  gazebo_ros_depth_camera
+  gazebo_ros_openni_kinect
+  gazebo_ros_gpu_laser
+  gazebo_ros_laser
+  gazebo_ros_block_laser
+  gazebo_ros_p3d
+  gazebo_ros_imu
   gazebo_ros_imu_sensor
-  gazebo_ros_f3d 
+  gazebo_ros_f3d
   gazebo_ros_ft_sensor
   gazebo_ros_bumper
   gazebo_ros_template
@@ -136,6 +136,7 @@ catkin_package(
   gazebo_ros_planar_move
   gazebo_ros_range
   gazebo_ros_vacuum_gripper
+  gazebo_ros_rtk_helper
 
   CATKIN_DEPENDS
   message_runtime
@@ -315,6 +316,8 @@ target_link_libraries(gazebo_ros_vacuum_gripper ${catkin_LIBRARIES} ${Boost_LIBR
 ##
 ## Add your new plugin here
 ##
+add_library(gazebo_ros_rtk_helper src/gazebo_ros_rtk_helper.cpp)
+target_link_libraries(gazebo_ros_rtk_helper ${catkin_LIBRARIES} ${Boost_LIBRARIES})
 
 ## Template
 add_library(gazebo_ros_template src/gazebo_ros_template.cpp)
@@ -361,6 +364,7 @@ install(TARGETS
   gazebo_ros_vacuum_gripper
   gazebo_ros_gpu_laser
   gazebo_ros_range
+  gazebo_ros_rtk_helper
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
