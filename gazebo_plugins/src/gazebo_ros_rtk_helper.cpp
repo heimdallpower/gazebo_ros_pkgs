@@ -64,13 +64,13 @@ void GazeboRosRTKHelper::LoadThread()
   if (this->sdf->HasElement("robotNamespace"))
     this->robot_namespace_ = this->sdf->Get<std::string>("robotNamespace") + "/";
 
-  if (!this->sdf->HasElement("gaussianNoise"))
+  if (!this->sdf->HasElement("gpsNoise"))
   {
-    ROS_INFO_NAMED("rtk_helper", "rtk_helper plugin missing <gaussianNoise>, defaults to 0.0");
-    this->gaussian_noise_ = 0.0;
+    ROS_INFO_NAMED("rtk_helper", "rtk_helper plugin missing <gpsNoise>, defaults to false");
+    this->gps_noise_ = false;
   }
   else
-    this->gaussian_noise_ = this->sdf->Get<double>("gaussianNoise");
+    this->gps_noise_ = this->sdf->Get<bool>("gpsNoise");
 
   if (!this->sdf->HasElement("bodyFrame"))
   {
@@ -130,7 +130,7 @@ void GazeboRosRTKHelper::LoadThread()
   this->gps_pub_ = this->rosnode_->advertise<sensor_msgs::NavSatFix>(
     this->gps_topic_name_, 1);
   this->odom_pub_queue = this->pmq.addPub<nav_msgs::Odometry>();
-  this->gps_pub_ = this->rosnode_->advertise<nav_msgs::Odometry>(
+  this->odom_pub_ = this->rosnode_->advertise<nav_msgs::Odometry>(
     this->odom_topic_name_, 1);
 
   // Initialize the controller
@@ -205,6 +205,56 @@ void GazeboRosRTKHelper::UpdateChild()
     this->odom_msg_.twist.twist.angular.y = ang_vel.Y();
     this->odom_msg_.twist.twist.angular.z = ang_vel.Z();
 
+    // --- GPS publishing logic ---
+    // Zurich Irchel Park
+    const double lat_home = 47.397742 * M_PI / 180.0;  // rad
+    const double lon_home = 8.545594 * M_PI / 180.0;   // rad
+    const double alt_home = 488.0;                     // meters
+    const double earth_radius = 6353000.0;             // meters
+
+    // --- GPS noise model ---
+    double dt = (cur_time - this->last_time_).Double();
+    if (this->gps_noise_) {
+      noise_gps_pos_.X() = gps_xy_noise_density_ * sqrt(dt) * ignition::math::Rand::DblNormal(0.0, 1.0);
+      noise_gps_pos_.Y() = gps_xy_noise_density_ * sqrt(dt) * ignition::math::Rand::DblNormal(0.0, 1.0);
+      noise_gps_pos_.Z() = gps_z_noise_density_ * sqrt(dt) * ignition::math::Rand::DblNormal(0.0, 1.0);
+      random_walk_gps_.X() = gps_xy_random_walk_ * sqrt(dt) * ignition::math::Rand::DblNormal(0.0, 1.0);
+      random_walk_gps_.Y() = gps_xy_random_walk_ * sqrt(dt) * ignition::math::Rand::DblNormal(0.0, 1.0);
+      random_walk_gps_.Z() = gps_z_random_walk_ * sqrt(dt) * ignition::math::Rand::DblNormal(0.0, 1.0);
+    } else {
+      noise_gps_pos_ = ignition::math::Vector3d(0,0,0);
+      random_walk_gps_ = ignition::math::Vector3d(0,0,0);
+    }
+    // gps bias integration
+    gps_bias_.X() += random_walk_gps_.X() * dt - gps_bias_.X() / gps_corellation_time_;
+    gps_bias_.Y() += random_walk_gps_.Y() * dt - gps_bias_.Y() / gps_corellation_time_;
+    gps_bias_.Z() += random_walk_gps_.Z() * dt - gps_bias_.Z() / gps_corellation_time_;
+
+    ignition::math::Vector3d pos_W_I = pose.Pos();
+    ignition::math::Vector3d pos_with_noise = pos_W_I + noise_gps_pos_ + gps_bias_;
+    // Reproject local position to GPS coordinates
+    double x_rad = pos_with_noise.Y() / earth_radius;    // north
+    double y_rad = pos_with_noise.X() / earth_radius;    // east
+    double c = sqrt(x_rad * x_rad + y_rad * y_rad);
+    double sin_c = sin(c);
+    double cos_c = cos(c);
+    double lat_rad, lon_rad;
+    if (c != 0.0) {
+      lat_rad = asin(cos_c * sin(lat_home) + (x_rad * sin_c * cos(lat_home)) / c);
+      lon_rad = (lon_home + atan2(y_rad * sin_c, c * cos(lat_home) * cos_c - x_rad * sin(lat_home) * sin_c));
+    } else {
+      lat_rad = lat_home;
+      lon_rad = lon_home;
+    }
+
+    // Fill NavSatFix message
+    this->gps_msg_.header.stamp.sec = cur_time.sec;
+    this->gps_msg_.header.stamp.nsec = cur_time.nsec;
+    this->gps_msg_.header.frame_id = this->frame_id_;
+    this->gps_msg_.latitude = lat_rad * 180.0 / M_PI;
+    this->gps_msg_.longitude = lon_rad * 180.0 / M_PI;
+    this->gps_msg_.altitude = pos_with_noise.Z() + alt_home;
+    this->gps_msg_.position_covariance_type = sensor_msgs::NavSatFix::COVARIANCE_TYPE_UNKNOWN;
     {
       boost::mutex::scoped_lock lock(this->lock_);
       // publish to ros
@@ -217,28 +267,5 @@ void GazeboRosRTKHelper::UpdateChild()
     // save last time stamp
     this->last_time_ = cur_time;
   }
-}
-
-
-//////////////////////////////////////////////////////////////////////////////
-// Utility for adding noise
-double GazeboRosRTKHelper::GaussianKernel(double mu, double sigma)
-{
-  // using Box-Muller transform to generate two independent standard
-  // normally disbributed normal variables see wikipedia
-
-  // normalized uniform random variable
-  double U = ignition::math::Rand::DblUniform();
-
-  // normalized uniform random variable
-  double V = ignition::math::Rand::DblUniform();
-
-  double X = sqrt(-2.0 * ::log(U)) * cos(2.0*M_PI * V);
-  // double Y = sqrt(-2.0 * ::log(U)) * sin(2.0*M_PI * V);
-
-  // there are 2 indep. vars, we'll just use X
-  // scale to our mu and sigma
-  X = sigma * X + mu;
-  return X;
 }
 }

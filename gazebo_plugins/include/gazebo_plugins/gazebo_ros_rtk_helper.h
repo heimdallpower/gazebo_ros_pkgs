@@ -89,11 +89,18 @@ namespace gazebo
     /// \brief: keep initial pose to offset orientation in imu message
     private: ignition::math::Pose3d initial_pose_;
 
-    /// \brief Gaussian noise
-    private: double gaussian_noise_;
+    /// \brief GPS noise
+    private: bool gps_noise_;
 
-    /// \brief Gaussian noise generator
-    private: double GaussianKernel(double mu, double sigma);
+    // GPS noise model variables
+    private: ignition::math::Vector3d gps_bias_ = ignition::math::Vector3d(0,0,0);
+    private: ignition::math::Vector3d noise_gps_pos_ = ignition::math::Vector3d(0,0,0);
+    private: ignition::math::Vector3d random_walk_gps_ = ignition::math::Vector3d(0,0,0);
+    private: double gps_corellation_time_ = 60.0;
+    private: double gps_xy_random_walk_ = 2.0;
+    private: double gps_z_random_walk_ = 4.0;
+    private: double gps_xy_noise_density_ = 2e-4;
+    private: double gps_z_noise_density_ = 4e-4;
 
     /// \brief for setting ROS name space
     private: std::string robot_namespace_;
