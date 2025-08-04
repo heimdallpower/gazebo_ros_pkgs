@@ -64,14 +64,6 @@ void GazeboRosRTKHelper::LoadThread()
   if (this->sdf->HasElement("robotNamespace"))
     this->robot_namespace_ = this->sdf->Get<std::string>("robotNamespace") + "/";
 
-  if (!this->sdf->HasElement("topicName"))
-  {
-    ROS_INFO_NAMED("rtk_helper", "rtk_helper plugin missing <topicName>, defaults to /default_odom");
-    this->topic_name_ = "/default_odom";
-  }
-  else
-    this->topic_name_ = this->sdf->Get<std::string>("topicName");
-
   if (!this->sdf->HasElement("gaussianNoise"))
   {
     ROS_INFO_NAMED("rtk_helper", "rtk_helper plugin missing <gaussianNoise>, defaults to 0.0");
@@ -83,24 +75,23 @@ void GazeboRosRTKHelper::LoadThread()
   if (!this->sdf->HasElement("bodyFrame"))
   {
     ROS_FATAL_NAMED("rtk_helper", "rtk_helper plugin missing <bodyFrame>, cannot proceed");
-    return;
+    this->link_name_ = "gazebo_link";
   }
   else
     this->link_name_ = this->sdf->Get<std::string>("bodyFrame");
 
   if (!this->sdf->HasElement("updateRate"))
   {
-    ROS_DEBUG_NAMED("rtk_helper", "rtk_helper plugin missing <updateRate>, defaults to 0.0"
-             " (as fast as possible)");
-    this->update_rate_ = 0.0;
+    ROS_DEBUG_NAMED("rtk_helper", "rtk_helper plugin missing <updateRate>, defaults to 8 Hz");
+    this->update_rate_ = 8.0;
   }
   else
     this->update_rate_ = this->sdf->GetElement("updateRate")->Get<double>();
 
   if (!this->sdf->HasElement("frameId"))
   {
-    ROS_INFO_NAMED("rtk_helper", "rtk_helper plugin missing <frameId>, defaults to <bodyFrame>");
-    this->frame_id_ = link_name_;
+    ROS_INFO_NAMED("rtk_helper", "rtk_helper plugin missing <frameId>, defaults to map");
+    this->frame_id_ = "map";
   }
   else
     this->frame_id_ = this->sdf->Get<std::string>("frameId");
@@ -132,13 +123,15 @@ void GazeboRosRTKHelper::LoadThread()
     return;
   }
 
-  // if topic name specified as empty, do not publish
-  if (this->topic_name_ != "")
-  {
-    this->pub_Queue = this->pmq.addPub<nav_msgs::Odometry>();
-    this->pub_ = this->rosnode_->advertise<nav_msgs::Odometry>(
-      this->topic_name_, 1);
-  }
+  this->gps_topic_name_ = "/gazebo/rtk_helper/gps";
+  this->odom_topic_name_ = "/gazebo/rtk_helper/odom";
+
+  this->gps_pub_queue = this->pmq.addPub<sensor_msgs::NavSatFix>();
+  this->gps_pub_ = this->rosnode_->advertise<sensor_msgs::NavSatFix>(
+    this->gps_topic_name_, 1);
+  this->odom_pub_queue = this->pmq.addPub<nav_msgs::Odometry>();
+  this->gps_pub_ = this->rosnode_->advertise<nav_msgs::Odometry>(
+    this->odom_topic_name_, 1);
 
   // Initialize the controller
 #if GAZEBO_MAJOR_VERSION >= 8
@@ -169,7 +162,7 @@ void GazeboRosRTKHelper::UpdateChild()
       (cur_time - this->last_time_).Double() < (1.0 / this->update_rate_))
     return;
 
-  if ((this->pub_.getNumSubscribers() > 0 && this->topic_name_ != ""))
+  if (this->gps_pub_.getNumSubscribers() > 0 || this->odom_pub_.getNumSubscribers() > 0)
   {
     ignition::math::Pose3d pose;
     ignition::math::Quaterniond rot;
@@ -184,11 +177,11 @@ void GazeboRosRTKHelper::UpdateChild()
 
     // get Rates
 #if GAZEBO_MAJOR_VERSION >= 8
-    ignition::math::Vector3d vpos = this->link->WorldLinearVel();
-    ignition::math::Vector3d veul = this->link->WorldAngularVel();
+    ignition::math::Vector3d lin_vel = this->link->WorldLinearVel();
+    ignition::math::Vector3d ang_vel = this->link->WorldAngularVel();
 #else
-    ignition::math::Vector3d vpos = this->link->GetWorldLinearVel().Ign();
-    ignition::math::Vector3d veul = this->link->GetWorldAngularVel().Ign();
+    ignition::math::Vector3d lin_vel = this->link->GetWorldLinearVel().Ign();
+    ignition::math::Vector3d ang_vel = this->link->GetWorldAngularVel().Ign();
 #endif
 
     // copy data into odometry message
@@ -205,18 +198,20 @@ void GazeboRosRTKHelper::UpdateChild()
     this->odom_msg_.pose.pose.orientation.z = pose.Rot().Z();
     this->odom_msg_.pose.pose.orientation.w = pose.Rot().W();
 
-    this->odom_msg_.twist.twist.linear.x = vpos.X();
-    this->odom_msg_.twist.twist.linear.y = vpos.Y();
-    this->odom_msg_.twist.twist.linear.z = vpos.Z();
-    this->odom_msg_.twist.twist.angular.x = veul.X();
-    this->odom_msg_.twist.twist.angular.y = veul.Y();
-    this->odom_msg_.twist.twist.angular.z = veul.Z();
+    this->odom_msg_.twist.twist.linear.x = lin_vel.X();
+    this->odom_msg_.twist.twist.linear.y = lin_vel.Y();
+    this->odom_msg_.twist.twist.linear.z = lin_vel.Z();
+    this->odom_msg_.twist.twist.angular.x = ang_vel.X();
+    this->odom_msg_.twist.twist.angular.y = ang_vel.Y();
+    this->odom_msg_.twist.twist.angular.z = ang_vel.Z();
 
     {
       boost::mutex::scoped_lock lock(this->lock_);
       // publish to ros
-      if (this->pub_.getNumSubscribers() > 0 && this->topic_name_ != "")
-          this->pub_Queue->push(this->odom_msg_, this->pub_);
+      if (this->gps_pub_.getNumSubscribers() > 0)
+          this->gps_pub_queue->push(this->gps_msg_, this->gps_pub_);
+      if (this->odom_pub_.getNumSubscribers() > 0)
+          this->odom_pub_queue->push(this->odom_msg_, this->odom_pub_);
     }
 
     // save last time stamp

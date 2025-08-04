@@ -24,6 +24,7 @@
 
 #include <ros/ros.h>
 #include <nav_msgs/Odometry.h>
+#include <sensor_msgs/NavSatFix.h>
 
 #include <gazebo/physics/physics.hh>
 #include <gazebo/transport/transport.hh>
@@ -56,10 +57,13 @@ namespace gazebo
 
     /// \brief pointer to ros node
     private: ros::NodeHandle* rosnode_;
-    private: ros::Publisher pub_;
-    private: PubQueue<nav_msgs::Odometry>::Ptr pub_Queue;
+    private: ros::Publisher gps_pub_;
+    private: ros::Publisher odom_pub_;
+    private: PubQueue<sensor_msgs::NavSatFix>::Ptr gps_pub_queue;
+    private: PubQueue<nav_msgs::Odometry>::Ptr odom_pub_queue;
 
-    /// \brief ros message
+    /// \brief ros messages
+    private: sensor_msgs::NavSatFix gps_msg_;
     private: nav_msgs::Odometry odom_msg_;
 
     /// \brief store link name
@@ -68,8 +72,9 @@ namespace gazebo
     /// \brief store frame id
     private: std::string frame_id_;
 
-    /// \brief topic name
-    private: std::string topic_name_;
+    /// \brief topic names
+    private: std::string odom_topic_name_;
+    private: std::string gps_topic_name_;
 
     /// \brief A mutex to lock access to fields
     /// that are used in message callbacks
