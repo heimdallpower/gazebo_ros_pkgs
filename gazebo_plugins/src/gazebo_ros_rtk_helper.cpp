@@ -178,7 +178,8 @@ void GazeboRosRTKHelper::UpdateChild()
     // get Rates
 #if GAZEBO_MAJOR_VERSION >= 8
     ignition::math::Vector3d lin_vel = this->link->WorldLinearVel();
-    ignition::math::Vector3d ang_vel = this->link->WorldAngularVel();
+    // NOTE: We send the angular velocity in body frame
+    ignition::math::Vector3d ang_vel = pose.Rot().RotateVector(this->link->WorldAngularVel());
 #else
     ignition::math::Vector3d lin_vel = this->link->GetWorldLinearVel().Ign();
     ignition::math::Vector3d ang_vel = this->link->GetWorldAngularVel().Ign();
